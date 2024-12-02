@@ -39,6 +39,7 @@
 #include <ctype.h>
 #include <time.h>
 #include <assert.h>
+#include <pwd.h>
 
 #include <wayland-client.h>
 
@@ -446,11 +447,19 @@ panel_clock_redraw_handler(struct widget *widget, void *data)
 	cairo_text_extents_t extents;
 	time_t rawtime;
 	struct tm * timeinfo;
+	struct passwd *pw;
+	char username[128];
 	char string[128];
+	char finalstring[256];
 
+	pw = getpwuid(getuid());
+	if(pw){
+		snprintf(username, sizeof username, "%s", pw->pw_name);	
+	}
 	time(&rawtime);
 	timeinfo = localtime(&rawtime);
 	strftime(string, sizeof string, clock->format_string, timeinfo);
+	snprintf(finalstring, sizeof finalstring, "| User: %s | %s", username , string);
 
 	widget_get_allocation(widget, &allocation);
 	if (allocation.width == 0)
@@ -458,7 +467,7 @@ panel_clock_redraw_handler(struct widget *widget, void *data)
 
 	cr = widget_cairo_create(clock->panel->widget);
 	cairo_set_font_size(cr, 14);
-	cairo_text_extents(cr, string, &extents);
+	cairo_text_extents(cr, finalstring, &extents);
 	if (allocation.x > 0)
 		allocation.x +=
 			allocation.width - DEFAULT_SPACING * 1.5 - extents.width;
@@ -468,10 +477,10 @@ panel_clock_redraw_handler(struct widget *widget, void *data)
 	allocation.y += allocation.height / 2 - 1 + extents.height / 2;
 	cairo_move_to(cr, allocation.x + 1, allocation.y + 1);
 	cairo_set_source_rgba(cr, 0, 0, 0, 0.85);
-	cairo_show_text(cr, string);
+	cairo_show_text(cr, finalstring);
 	cairo_move_to(cr, allocation.x, allocation.y);
 	cairo_set_source_rgba(cr, 1, 1, 1, 0.85);
-	cairo_show_text(cr, string);
+	cairo_show_text(cr, finalstring);
 	cairo_destroy(cr);
 }
 
