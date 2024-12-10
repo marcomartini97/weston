@@ -253,6 +253,27 @@ rdp_peer_refresh_raw(pixman_region32_t *region, pixman_image_t *image, freerdp_p
 	update->SurfaceFrameMarker(peer->context, &marker);
 }
 
+/* Refreshrate handler */
+void *peer_refreshrate_handler(void *arg){
+	struct rdp_refreshrate_data *data = (struct rdp_refreshrate_data *) arg;
+
+	pthread_mutex_t *mutex = &data->peerContext->peer_refreshrate_mutex;
+	pthread_cond_t *cond = &data->peerContext->peer_refreshrate_cond;
+
+	while(data->running){
+		//TODO: handle it from somewhere else related to bandwidth
+		//pthread_mutex_lock(mutex);
+		//pthread_cond_wait(cond, mutex);
+		//pthread_mutex_unlock(mutex);
+		printf("Current Refresh: %d\nNew Refresh: ", data->mode->refresh);
+		scanf("%d",&data->peerContext->rdpBackend->rdp_monitor_refresh_rate);
+		printf("Updated Refresh: %d\n",data->peerContext->rdpBackend->rdp_monitor_refresh_rate);
+		data->mode->refresh = data->peerContext->rdpBackend->rdp_monitor_refresh_rate;
+	}
+
+	return NULL;
+}
+
 static void
 rdp_peer_refresh_region(pixman_region32_t *region, freerdp_peer *peer)
 {
@@ -650,6 +671,20 @@ rdp_shutdown(struct weston_backend *backend)
 
 	wl_list_for_each_safe(rdp_peer, tmp, &b->peers, link) {
 		freerdp_peer* client = rdp_peer->peer;
+
+		/* Disable the fps handler thread */
+		RdpPeerContext* peer_context = (RdpPeerContext *) client->context;
+		if(peer_context->peer_refreshrate_data){
+			pthread_mutex_lock(&peer_context->peer_refreshrate_mutex);
+			peer_context->peer_refreshrate_data->running = 0;
+			pthread_cond_signal(&peer_context->peer_refreshrate_cond);
+			pthread_mutex_unlock(&peer_context->peer_refreshrate_mutex);
+			pthread_join(peer_context->peer_refreshrate_thread, NULL);
+
+			free(peer_context->peer_refreshrate_data);
+			pthread_mutex_destroy(&peer_context->peer_refreshrate_mutex);
+			pthread_cond_destroy(&peer_context->peer_refreshrate_cond);
+		}
 
 		client->Disconnect(client);
 		freerdp_peer_context_free(client);
@@ -1188,6 +1223,25 @@ xf_peer_activate(freerdp_peer* client)
 	pointer_system.type = SYSPTR_NULL;
 	pointer->PointerSystem(client->context, &pointer_system);
 
+
+	/* Create refresh rate handler thread */
+	pthread_mutex_init(&peerCtx->peer_refreshrate_mutex, NULL);
+	pthread_cond_init(&peerCtx->peer_refreshrate_cond, NULL);
+
+	/* Thread data */
+	peerCtx->peer_refreshrate_data = malloc(sizeof(struct rdp_refreshrate_data));
+	if(!peerCtx->peer_refreshrate_data){
+		goto error_exit;
+	}
+
+	peerCtx->peer_refreshrate_data->base = weston_output; 
+	peerCtx->peer_refreshrate_data->mode = weston_output->current_mode;
+	peerCtx->peer_refreshrate_data->peerContext = (RdpPeerContext *) client->context;
+	peerCtx->peer_refreshrate_data->peerSettings = client->context->settings;
+	peerCtx->peer_refreshrate_data->running = 1;
+
+	pthread_create(&peerCtx->peer_refreshrate_thread, NULL, peer_refreshrate_handler, peerCtx->peer_refreshrate_data);
+	
 	rdp_full_refresh(client, output);
 
 	return TRUE;

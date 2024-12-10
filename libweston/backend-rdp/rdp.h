@@ -55,6 +55,7 @@
 #include <winpr/string.h>
 
 #include "backend.h"
+#include <pthread.h>
 
 #include "shared/helpers.h"
 #include "shared/string-helpers.h"
@@ -153,8 +154,21 @@ struct rdp_output {
 	pixman_image_t *shadow_surface;
 };
 
+struct rdp_refreshrate_data {
+	struct weston_output *base;
+	struct weston_mode *mode;
+	struct rdp_peer_context *peerContext;
+	rdpSettings *peerSettings;
+	int running;
+};
+
 struct rdp_peer_context {
 	rdpContext _p;
+
+	pthread_mutex_t peer_refreshrate_mutex;
+	pthread_cond_t peer_refreshrate_cond;
+	pthread_t peer_refreshrate_thread;
+	struct rdp_refreshrate_data *peer_refreshrate_data;
 
 	struct rdp_backend *rdpBackend;
 	struct wl_event_source *events[MAX_FREERDP_FDS + 1]; /* +1 for WTSVirtualChannelManagerGetFileDescriptor */
